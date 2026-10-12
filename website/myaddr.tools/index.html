@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<!-- Modified for https://github.com/efrgdgr0024345/dnscheck on 2026-10-12; original project by Brian Shea and contributors. See docs/UPSTREAM.md. -->
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Registered dynamic DNS — modified community version</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="/man.css">
+<header><h1>Registered dynamic DNS</h1><div>Names with generated owner keys</div></header>
+<p class="fork-deployment-note">This documentation describes the modified fork. Reserved <code>example.com</code> and <code>*.example</code> names below are placeholders; configure your own service domains. The original public addr.tools services are operated independently.</p>
+<h2>GET STARTED</h2>
+<p>On a configured deployment, <a href="/claim">claim an available name</a> and save its generated secret key. The key grants control of that registration. It cannot be recovered from this service if lost.</p>
+<p>The original service uses Brian Shea’s <code>myaddr.tools</code>, <code>myaddr.dev</code>, and <code>myaddr.io</code> domains. This fork does not provide or control those domains. Available suffixes and hostnames are set by the operator.</p>
+<h2>AUTHENTICATION</h2>
+<p>Send the generated key as <code>Authorization: Bearer KEY</code>. Never place it in a URL. Keep an authorization header file readable only by your updater account, outside a web root, and avoid exposing it in command history or logs.</p>
+<h2>UPDATE API</h2>
+<p>On this deployment, the update route is <code>/update</code>. Send <code>POST</code> or <code>PUT</code> with an <code>application/json</code> or <code>application/x-www-form-urlencoded</code> body. GET does not make changes. Successful updates return HTTP 200 and <code>OK</code>; invalid requests return a 4xx error.</p>
+<p>Set <code>ip</code> to an IPv4/IPv6 address, or <code>self</code> to use the update request’s source address. Setting one family replaces that family’s existing address. The operator can configure IPv4-only and IPv6-only update hosts.</p>
+<p><samp class="pre-line break">curl --fail-with-body --header @auth.header --data-urlencode &quot;ip=self&quot; https://myaddr.example.com/update</samp></p>
+<p>To add a temporary ACME DNS-01 TXT record, send <code>acme_challenge</code> in the body instead. Challenges are served under the registration’s <code>_acme-challenge</code> names and expire automatically.</p>
+<p>A <code>DELETE /update</code> request with the bearer header and no challenge field removes both IP address families. Include an <code>acme_challenge</code> body field instead to remove that one challenge. Successful deletions return HTTP 204. At most 8 distinct challenges can be active per registration; repeated additions refresh the existing value, and challenges expire after 120 seconds.</p>
+<h2>REGISTRATION API</h2>
+<p><code>POST /reg</code> accepts <code>{"name":"your-name","challenge":"TURNSTILE_TOKEN"}</code> and returns the generated name/key pair on success. The claim page performs this step.</p>
+<p><code>GET /reg</code> with the bearer header reads registration information. <code>DELETE /reg</code> with the bearer header deletes the registration and releases its name. Suspended or revoked keys cannot perform ordinary updates.</p>
+<h2>EXPIRATION</h2>
+<p>Make the first update within one hour of claiming. Refresh each IP family within 90 days to keep that address active. A registration expires after 120 days without an update. Check the operator’s published policy if these defaults have been changed.</p>
+<h2>PRIVACY AND THIRD PARTIES</h2>
+<p>The service processes your chosen name, source IP address, update records and verification response. Application and proxy logging can retain names, query records and source addresses; the operator must state the actual logging and retention policy.</p>
+<p>The claim page loads Cloudflare Turnstile after you choose to continue. That provider receives browser/network information and its script runs on the page that displays your new key. The claim page also retrieves a pinned Bootstrap stylesheet from jsDelivr. Do not claim that this deployment collects no data.</p>
+<p>Public DNS records are public. Protect the secret key and send it only to the HTTPS endpoint of the operator you intend to trust. Report service problems to that operator; the original author is not responsible for this fork’s changes or deployment.</p>
+
+
+<footer class="fork-credit" style="margin: 2rem 1rem 5rem; padding-top: 1rem; border-top: 1px solid currentColor; font-size: 0.9rem; line-height: 1.6; white-space: normal; opacity: 1;">
+  <strong>Modified community version.</strong> Based on <a href="https://github.com/brianshea2/addr.tools">addr.tools by Brian Shea and contributors</a>.
+  <a href="https://github.com/efrgdgr0024345/dnscheck">Source of this modified version</a> ·
+  <a href="https://github.com/efrgdgr0024345/dnscheck/blob/main/LICENSE">AGPL-3.0-or-later license</a> ·
+  <a href="https://github.com/efrgdgr0024345/dnscheck/blob/main/CREDITS.md">Credits</a> ·
+  <a href="https://github.com/efrgdgr0024345/dnscheck/blob/main/THIRD_PARTY_NOTICES.md">Third-party notices</a>.
+  Changes and deployment are not endorsed by the upstream authors. Provided without warranty; see the license.
+</footer>

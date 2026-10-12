@@ -1,0 +1,169 @@
+// Modified for https://github.com/efrgdgr0024345/dnscheck on 2026-10-12; original project by Brian Shea and contributors. See docs/UPSTREAM.md.
+import { IPAddr }               from '/js/ipaddr.js'
+import { Client as RDAPClient } from '/js/rdap.js'
+import { encode, fetchOk, randomId } from '/js/util.js'
+import { config, configurationError } from './config.js'
+
+// get & set clientId
+const clientId = window.location.pathname.match(/^\/watch\/([0-9a-f]{32})$/)?.[1] ?? randomId()
+history.replaceState(null, '', `/watch/${clientId}`)
+document.title = `watch/${clientId}`
+document.getElementById('clientid').innerHTML = `/${clientId}`
+
+// state
+const rdapClient = new RDAPClient()
+const ptrCache   = {}     // PTR name promise cache
+let autoscroll   = true   // toggle for autoscroll on new request
+let count        = 0      // number of requests received
+let countdownId           // countdown timer `setInterval()` id
+let timer                 // current countdown value
+
+// commonly used elements
+const requestsDiv  = document.getElementById('requests')
+const countSpan    = document.getElementById('count')
+const wsStatusSpan = document.getElementById('ws-status')
+const timerSpan    = document.getElementById('timer')
+
+// toggle autoscroll based on user scroll position
+window.addEventListener('scroll', () => {
+  if (Math.abs(window.scrollY + document.documentElement.clientHeight - document.documentElement.scrollHeight) < 10) {
+    autoscroll = true
+  } else {
+    autoscroll = false
+  }
+})
+
+// returns cached promise of PTR name for given IP string
+const getPtr = ip => {
+  if (ptrCache[ip] === undefined) {
+    ptrCache[ip] = fetchOk(`${config.dnsLookupURL}${new IPAddr(ip).reverseZone()}/ptr`)
+      .then(r => r.json())
+      .then(o => o.Answer?.find(({ type }) => type === 12)?.data?.slice(0, -1))
+  }
+  return ptrCache[ip]
+}
+
+// socket open handler
+const handleOpen = () => {
+  console.log('WebSocket opened')
+  // set status
+  wsStatusSpan.innerHTML = 'listening'
+  wsStatusSpan.className = 'green'
+  // start countdown timer
+  timer = 120
+  timerSpan.innerHTML = `(${timer})`
+  countdownId = setInterval(() => {
+    timerSpan.innerHTML = `(${--timer})`
+    if (timer === 0) {
+      clearInterval(countdownId)
+      countdownId = undefined
+    }
+  }, 1000)
+  // set content
+  if (count === 0) {
+    requestsDiv.innerHTML = '<p>listening for requests...' +
+      `<p>try \`<span ondblclick="window.getSelection().selectAllChildren(this)">dig txt ${clientId}.test.${config.probeBaseDomain}</span>\`` +
+      `<p>or <a href="https://${clientId}.test.${config.probeBaseDomain}/" onclick="fetch(this.href).catch(() => {});return false">click here</a>.`
+  }
+}
+
+// socket message handler
+const handleMessage = ({ data }) => {
+  // parse data
+  const request = JSON.parse(data)
+  // increment count, clear placeholder content
+  if (count++ === 0) {
+    requestsDiv.innerHTML = ''
+  }
+  countSpan.innerHTML = count
+  // add DNS request content
+  const tmpId = String(count)
+  const ipLink = config.ipInfoURL ? `<a href="${encode(config.ipInfoURL + request.remoteIp)}" target="_blank" rel="noopener noreferrer">${encode(request.remoteIp)}</a>` : encode(request.remoteIp)
+  let html = `<div class="dns-request-wrapper"><span>#${count}</span><div class="dns-request">${encode(request.msgText).replace(/\n/g, '<br>')}` +
+    `<br>;; CLIENT: ${ipLink}#${request.remotePort}<span id="ptr-${tmpId}">(<i>pending</i>)</span>` +
+    `<span id="rdap-${tmpId}"> (<i>pending</i>)</span> (${request.proto})`
+  if (request.proto === 'TLS' || request.proto === 'QUIC') {
+    html += `<br>;; ${request.proto}: (${[
+      request.quicVersion,
+      request.tlsVersion.replaceAll(' ', ''),
+      request.tlsNamedGroup,
+      request.tlsCipherSuite,
+    ].filter(Boolean).join(')-(')})`
+    if (request.tlsDidResume) {
+      html += ' resumed'
+    }
+    if (request.used0RTT) {
+      html += ' 0-rtt'
+    }
+  }
+  html += `<br>;; WHEN: ${new Date(request.time * 1000).toLocaleString()}</div></div>`
+  requestsDiv.innerHTML += html
+  // autoscroll
+  if (autoscroll) {
+    window.scroll(window.scrollX, document.documentElement.scrollHeight)
+  }
+  // get PTR, update when available
+  getPtr(request.remoteIp).catch(() => {}).then(ptr => {
+    const span = document.getElementById(`ptr-${tmpId}`)
+    if (ptr) {
+      span.innerHTML = `(${encode(ptr)})`
+    } else {
+      span.remove()
+    }
+  })
+  // get RDAP, update when available
+  rdapClient.lookupIP(request.remoteIp).catch(() => {}).then(r => {
+    const span = document.getElementById(`rdap-${tmpId}`)
+    if (r) {
+      span.innerHTML = ` (${encode(r.registrantName || r.data.name || r.data.handle)})`
+    } else {
+      span.remove()
+    }
+  })
+}
+
+// socket close handler
+const handleClose = e => {
+  console.log(`WebSocket closed (${e.code})`)
+  // set status
+  wsStatusSpan.innerHTML = 'done'
+  wsStatusSpan.className = 'red'
+  // stop countdown timer
+  if (countdownId) {
+    clearInterval(countdownId)
+    countdownId = undefined
+  }
+  timerSpan.innerHTML = ''
+  // set content
+  if (e.code === 4000) { // clientId is already in use
+    requestsDiv.innerHTML = `<p class="red">error: ${clientId} is already in use`
+  } else {
+    timerSpan.innerHTML = `<span class="link" onclick="window.openSocket()">reopen</span>`
+    if (count === 0) {
+      requestsDiv.innerHTML = `<p>no requests received`
+    }
+  }
+}
+
+// opens and sets listeners on WebSocket connection to recieve DNS requests
+window.openSocket = () => {
+  const socket = new WebSocket(`${config.websocketURL}${clientId}`, 'full')
+  socket.addEventListener('open', handleOpen)
+  socket.addEventListener('message', handleMessage)
+  socket.addEventListener('close', handleClose)
+  // keep socket alive
+  let keepAliveId
+  socket.addEventListener('open', () => {
+    keepAliveId = setInterval(() => socket.readyState === 1 && socket.send('keepalive'), 25000)
+  })
+  socket.addEventListener('close', () => keepAliveId && clearInterval(keepAliveId))
+}
+
+// No upstream production endpoint is used by default.
+const setupError = configurationError()
+if (setupError) {
+  requestsDiv.textContent = setupError + ' Configure this operator’s endpoints before watching.'
+  wsStatusSpan.textContent = 'not configured'
+} else {
+  window.openSocket()
+}

@@ -1,0 +1,13 @@
+.git
+provenance
+test
+tests
+website
+docs
+*.log
+*.token
+*.key
+*.pem
+db.json
+bin
+dist

@@ -1,0 +1,12 @@
+website/dnscheck.tools/known-ipranges.json
+
+# Local runtime state and credentials must not be committed.
+/bin/
+/dist/
+/run/
+*.log
+*.token
+*.key
+*.pem
+__pycache__/
+*.pyc

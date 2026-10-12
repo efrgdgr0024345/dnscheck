@@ -1,0 +1,47 @@
+{
+  "HTTPSocketPath": "/data/addrd.sock",
+  "AdminSocketPath": "",
+  "AdminTokenFile": "",
+  "DNSListenAddress": ":53",
+  "TLSListenAddress": ":853",
+  "RequestLogPath": "",
+  "DatabasePath": "/data/db.json",
+  "ValkeyURL": "",
+  "TLSCertPath": "",
+  "TLSKeyPath": "",
+  "TLSTicketKeysPath": "",
+  "QUICMasterSecret": "",
+  "LookupUpstream": "",
+  "LookupNetwork": "tcp-tls",
+  "LookupTLSName": "",
+  "AllowInsecureLookup": false,
+  "WatcherAllowedOrigins": [
+    "https://check.example.invalid"
+  ],
+  "WatcherTrustedClientIPHeader": "X-Addr-Client-IP",
+  "WatcherMaxPerClient": 4,
+  "MyaddrTurnstileSecret": "",
+  "MyaddrTurnstileHostname": "",
+  "MyaddrTurnstileAction": "claim",
+  "DnscheckZones": [
+    {
+      "Zone": "test.example.invalid.",
+      "Ns": [
+        "ns.example.invalid."
+      ]
+    }
+  ],
+  "ChallengesZone": {
+    "Zone": "challenges.example.invalid.",
+    "Ns": [
+      "ns.example.invalid."
+    ]
+  },
+  "DynZone": {
+    "Zone": "dyn.example.invalid.",
+    "Ns": [
+      "ns.example.invalid."
+    ]
+  },
+  "MyaddrZones": []
+}

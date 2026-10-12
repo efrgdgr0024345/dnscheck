@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<!-- Modified for https://github.com/efrgdgr0024345/dnscheck on 2026-10-12; original project by Brian Shea and contributors. See docs/UPSTREAM.md. -->
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>ACME challenge helper — modified community version</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="/man.css">
+<header><h1>ACME challenge helper</h1><div>DNS-01 certificate validation</div></header>
+<p class="fork-deployment-note">This documentation describes the modified fork. Reserved <code>example.com</code> and <code>*.example</code> names below are placeholders; configure your own service domains. The original public addr.tools services are operated independently.</p>
+<h2>HOW IT WORKS</h2>
+<p>This service publishes temporary TXT records for ACME DNS-01 challenges. Your domain’s <code>_acme-challenge</code> CNAME points to a name derived from your secret. A certificate authority such as Let’s Encrypt follows that delegation.</p>
+<h2>CREATE A SECRET</h2>
+<p>Generate 32 random bytes in canonical unpadded base64url format (43 characters). The API requires this exact token format and rejects query-string credentials. Generate the token cryptographically: a format check cannot prove randomness. Create private files without printing the secret:</p>
+<p><samp class="pre-line break">umask 077
+openssl rand -base64 32 | tr &#x27;+/&#x27; &#x27;-_&#x27; | tr -d &#x27;=\n&#x27; &gt; secret.token
+{ printf &#x27;Authorization: Bearer &#x27;; cat secret.token; printf &#x27;\n&#x27;; } &gt; auth.header
+sha224=$(openssl dgst -sha224 -r secret.token | cut -d &#x27; &#x27; -f 1)</samp></p>
+<p>The public SHA-224 name is an offline verifier for password guesses. Keep the random token private. Rotating it changes the target name, so update the CNAME delegation too.</p>
+<h2>ADD A CHALLENGE</h2>
+<p>Send <code>POST</code> or <code>PUT</code> with <code>Authorization: Bearer SECRET</code> and a <code>txt</code> field in a URL-encoded form or JSON body. Success returns HTTP 201 and <code>OK</code>.</p>
+<p><samp class="pre-line break">curl --fail-with-body --header @auth.header --data-urlencode &quot;txt=$CERTBOT_VALIDATION&quot; https://challenges.example.com/</samp></p>
+<p>A <code>GET</code> with only the bearer header returns the derived domain without changing state. GET requests containing <code>txt</code> and credentials in URLs are rejected.</p>
+<p>At most 8 distinct challenges can be active for one name. Adding the same challenge refreshes its lifetime instead of creating a duplicate. A <code>DELETE</code> request with the bearer header and the <code>txt</code> body field removes that one challenge and returns HTTP 204. Challenges otherwise expire after 120 seconds.</p>
+<h2>DELEGATION AND AUTOMATION</h2>
+<p><samp class="pre-line break">printf &quot;%s.challenges.example.com\n&quot; &quot;$sha224&quot;</samp></p>
+<p>Use the printed name as the CNAME target of <code>_acme-challenge.example.com</code>. A fixed Certbot hook script should read the protected credential file and submit the validation string as encoded data. Do not insert secrets into a shell command that will be parsed again.</p>
+<p>See the maintained <a href="https://github.com/efrgdgr0024345/dnscheck/tree/main/scripts">certificate helper scripts in this fork</a>. Configure them with your own endpoint and protected secret file before use. The helper does not replace the need to control the domain’s DNS delegation.</p>
+<h2>DATA HANDLING</h2>
+<p>Challenge TXT records are public while active. The service processes update source addresses and can log requests. Operators must document retention and access. A bearer credential grants control over this challenge name and must not appear in logs.</p>
+
+
+<footer class="fork-credit" style="margin: 2rem 1rem 5rem; padding-top: 1rem; border-top: 1px solid currentColor; font-size: 0.9rem; line-height: 1.6; white-space: normal; opacity: 1;">
+  <strong>Modified community version.</strong> Based on <a href="https://github.com/brianshea2/addr.tools">addr.tools by Brian Shea and contributors</a>.
+  <a href="https://github.com/efrgdgr0024345/dnscheck">Source of this modified version</a> ·
+  <a href="https://github.com/efrgdgr0024345/dnscheck/blob/main/LICENSE">AGPL-3.0-or-later license</a> ·
+  <a href="https://github.com/efrgdgr0024345/dnscheck/blob/main/CREDITS.md">Credits</a> ·
+  <a href="https://github.com/efrgdgr0024345/dnscheck/blob/main/THIRD_PARTY_NOTICES.md">Third-party notices</a>.
+  Changes and deployment are not endorsed by the upstream authors. Provided without warranty; see the license.
+</footer>

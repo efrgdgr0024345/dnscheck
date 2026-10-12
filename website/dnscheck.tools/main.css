@@ -1,0 +1,327 @@
+/* Modified for https://github.com/efrgdgr0024345/dnscheck on 2026-10-12; original project by Brian Shea and contributors. See docs/UPSTREAM.md. */
+:root {
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  --background-color: #fff;
+  --header-color: #ebebeb;
+  --status-color: #ebebeb;
+  --text-color: #2e3436;
+  --text-color-red: #c00;
+  --text-color-orange: #c85000;
+  --text-color-yellow: #c4a000;
+  --text-color-green: #4e9a06;
+  --text-color-blue: #06989a;
+  --text-color-indigo: #3465a4;
+  --text-color-violet: #75507b;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background-color: #2e3436;
+    --header-color: #222222;
+    --status-color: #222222;
+    --text-color: #d3d7cf;
+    --text-color-red: #ef2929;
+    --text-color-orange: #f6893c;
+    --text-color-yellow: #fce94f;
+    --text-color-green: #8ae234;
+    --text-color-blue: #34e2e2;
+    --text-color-indigo: #729fcf;
+    --text-color-violet: #ad7fa8;
+  }
+}
+body {
+  background-color: var(--background-color);
+  color: var(--text-color);
+  font-size: 13px;
+  line-height: 1.3;
+  margin: 0;
+}
+body, code, kbd, samp, var {
+  font-family: ui-monospace, 'Cascadia Code', 'SFMono-Regular', Consolas, monospace;
+}
+button {
+  font: inherit;
+  padding: 0.65em 1em;
+  margin: 0.65em 0.5em 0.65em 0;
+  border: 1px solid currentColor;
+  border-radius: 0.3em;
+  background: var(--header-color);
+  color: inherit;
+  cursor: pointer;
+}
+button:disabled { cursor: default; opacity: 0.6; }
+.setup-panel { border-left: 3px solid var(--text-color-blue); padding-left: 1em; }
+.setup-panel p, #webrtc-status { margin-top: 0.6em; max-width: 85ch; }
+var {
+  font-style: italic;
+}
+var::before {
+  content: '<';
+}
+var::after {
+  content: '>';
+}
+a, span.link {
+  color: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+a.no-ul, span.link.no-ul {
+  text-decoration: none;
+}
+:is(a, span.link):hover {
+  font-weight: bold;
+  text-decoration: underline;
+}
+h1, h2, h3 {
+  font-size: 1em;
+  font-weight: bold;
+  margin: 0;
+}
+p {
+  margin: 0;
+}
+ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+ul.indent li {
+  padding-left: 2ch;
+  text-indent: -2ch;
+}
+@media (min-width: 768px) {
+  ul.indent li {
+    padding-left: 4ch;
+    text-indent: -4ch;
+  }
+}
+ul.ip-list li {
+  display: flex;
+  flex-direction: column;
+  word-break: break-all;
+}
+.ip-list-tabular ul.ip-list li {
+  flex-direction: row;
+  white-space: nowrap;
+}
+.ip-list-tabular ul.ip-list li:hover {
+  font-weight: bold;
+}
+.ip-list-tabular ul.ip-list li > span:nth-child(1) {
+  width: var(--ip-min-width);
+}
+.ip-list-tabular ul.ip-list li > span:nth-child(2) {
+  width: var(--ptr-min-width);
+}
+.ip-list-tabular ul.ip-list li > span:nth-child(3) {
+  text-align: right;
+  width: var(--geo-min-width);
+}
+ul.ip-list li > span:nth-child(n+2) {
+  padding-left: 2ch;
+}
+@media (min-width: 768px) {
+  ul.ip-list li > span:nth-child(n+2) {
+    padding-left: 4ch;
+  }
+}
+.unverified-ptr {
+  opacity: 0.7;
+  text-decoration: underline wavy #c00;
+}
+ul.options li > span:nth-child(1) {
+  font-weight: bold;
+}
+ul.options li > span:nth-child(2)::before {
+  content: '- ';
+}
+@media (min-width: 768px) {
+  ul.options li {
+    display: grid;
+    grid-template-columns: 2fr 5fr;
+    gap: 4ch;
+  }
+  ul.options li > span:nth-child(2)::before {
+    padding-left: 2ch;
+  }
+}
+.hidden {
+  display: none !important;
+}
+.bold, strong {
+  font-weight: bold;
+}
+.light {
+  opacity: 0.5;
+}
+.break {
+  word-break: break-all;
+}
+.nowrap {
+  white-space: nowrap;
+}
+.red {
+  color: var(--text-color-red);
+}
+.orange {
+  color: var(--text-color-orange);
+}
+.yellow {
+  color: var(--text-color-yellow);
+}
+.green {
+  color: var(--text-color-green);
+}
+.blue {
+  color: var(--text-color-blue);
+}
+.indigo {
+  color: var(--text-color-indigo);
+}
+.violet {
+  color: var(--text-color-violet);
+}
+header {
+  background-color: var(--header-color);
+  display: grid;
+  grid-template-columns: 1fr max-content 1fr;
+  gap: 1ch;
+  padding-top: calc(1em + env(safe-area-inset-top));
+  padding-right: 2ch;
+  padding-bottom: 1em;
+  padding-left: 2ch;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  white-space: nowrap;
+  z-index: 1;
+}
+header > div:last-child {
+  text-align: right;
+}
+header :is(a, span.link) {
+  text-decoration: none !important;
+}
+header h1 {
+  display: inline;
+}
+.content {
+  padding-top: env(safe-area-inset-top);
+  padding-right: 0;
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: 0;
+}
+.content-inner {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1.6em;
+  padding: 5em 2ch 4em 2ch;
+}
+body:not(:has(> .status)) .content-inner {
+  padding-bottom: 2.6em;
+}
+.status {
+  background-color: var(--status-color);
+  display: flex;
+  align-items: center;
+  gap: 2ch;
+  padding-top: 0.5em;
+  padding-right: 2ch;
+  padding-bottom: calc(0.5em + env(safe-area-inset-bottom));
+  padding-left: 2ch;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 1;
+}
+.status > div:last-child {
+  flex-grow: 1;
+  text-align: right;
+}
+.d-flex-col {
+  display: flex;
+  flex-direction: column;
+}
+.dns-request-wrapper {
+  display: flex;
+  gap: 1ch;
+}
+.dns-request {
+  border-left: 2px solid;
+  padding-left: 1ch;
+  white-space: pre;
+}
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.3em;
+}
+.section :is(h2, h3, .title, .subtitle) {
+  margin-bottom: -1.3em;
+  white-space: nowrap;
+}
+.section :is(h3, .subtitle, .padleft-1) {
+  padding-left: 2ch;
+}
+.section > :is(p, ul) {
+  padding-left: 4ch;
+}
+@media (min-width: 768px) {
+  .section :is(h3, .subtitle, .padleft-1) {
+    padding-left: 4ch;
+  }
+  .section > :is(p, ul) {
+    padding-left: 8ch;
+  }
+}
+table.dnssec {
+  display: grid;
+  align-items: end;
+  grid-template-columns: min-content repeat(4, 1fr);
+  padding-bottom: 1.3em;
+  position: relative;
+}
+table.dnssec caption {
+  font-size: 0.9em;
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translate(-50%, 0);
+  white-space: nowrap;
+}
+table.dnssec :is(thead, tbody, tr) {
+  display: contents;
+}
+table.dnssec :is(th, td) {
+  font-weight: normal;
+  padding: 0 0 0 2ch;
+  text-align: center;
+}
+@media (min-width: 768px) {
+  table.dnssec :is(th, td) {
+    padding-left: 4ch;
+  }
+}
+table.dnssec tbody th {
+  text-align: right;
+}
+table.dnssec tbody tr:hover :is(th, td) {
+  font-weight: bold;
+}
+@keyframes fade-pulse {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
+}
+.pending > span {
+  opacity: 0;
+  animation: 3s infinite fade-pulse;
+}
+.pending > span:nth-child(2) {
+  animation-delay: 0.5s;
+}
+.pending > span:nth-child(3) {
+  animation-delay: 1s;
+}

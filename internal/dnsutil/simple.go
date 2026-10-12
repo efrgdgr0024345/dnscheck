@@ -1,0 +1,238 @@
+// Modified for efrgdgr0024345/dnscheck on 2026-10-12.
+// Original project by Brian Shea and contributors; see COPYRIGHT, LICENSE and CREDITS.md.
+
+package dnsutil
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"sync/atomic"
+
+	"github.com/miekg/dns"
+)
+
+type RecordGenerator interface {
+	GenerateRecords(question *dns.Question, zone string) (rrs []dns.RR, validName bool, err error)
+}
+
+type SimpleHandler struct {
+	RecordGenerator
+	*DnssecProvider
+	Zone           string
+	Ns             []string
+	HostMasterMbox string
+	StaticRecords  StaticRecords
+	soaSig         atomic.Pointer[dns.RRSIG]
+	soaRefresh     *SOASignatureRefresher
+}
+
+// InitContext initializes a handler before it serves requests. The caller must
+// cancel ctx and call WaitForRefresh when stopping the handler.
+func (h *SimpleHandler) InitContext(ctx context.Context, privKeyBytes []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if h == nil || len(h.Ns) == 0 {
+		return fmt.Errorf("DNS handler requires at least one nameserver")
+	}
+	h.Zone = dns.CanonicalName(h.Zone)
+	for i, ns := range h.Ns {
+		h.Ns[i] = dns.CanonicalName(ns)
+	}
+	if len(h.HostMasterMbox) == 0 {
+		h.HostMasterMbox = "hostmaster." + h.Zone
+	} else {
+		h.HostMasterMbox = dns.CanonicalName(h.HostMasterMbox)
+	}
+	if h.DnssecProvider != nil {
+		if h.DnssecProvider.SigningKey == nil {
+			return fmt.Errorf("missing signing key")
+		}
+		h.DnssecProvider.SigningKey.Hdr.Name = h.Zone
+		h.DnssecProvider.SigningKey.Hdr.Rrtype = dns.TypeDNSKEY
+		h.DnssecProvider.SigningKey.Hdr.Class = dns.ClassINET
+		h.DnssecProvider.SigningKey.Hdr.Ttl = 1800
+		h.DnssecProvider.SigningKey.Flags = 257  // Secure Entry Point
+		h.DnssecProvider.SigningKey.Protocol = 3 // DNSSEC
+		if err := h.DnssecProvider.SetPrivKeyBytes(privKeyBytes); err != nil {
+			return err
+		}
+		var err error
+		h.soaRefresh, err = StartSOASignatureRefresh(ctx, h.DnssecProvider, h.SOA(nil, false)[0].(*dns.SOA), h.soaSig.Store)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (h *SimpleHandler) WaitForRefresh() error {
+	return h.soaRefresh.Wait()
+}
+
+func (h *SimpleHandler) SOA(q *dns.Question, includeSig bool) (rrs []dns.RR) {
+	var name string
+	if q == nil {
+		name = h.Zone
+	} else {
+		name = q.Name[len(q.Name)-len(h.Zone):]
+	}
+	if includeSig {
+		rrs = make([]dns.RR, 1, 2)
+	} else {
+		rrs = make([]dns.RR, 1)
+	}
+	rrs[0] = &dns.SOA{
+		Hdr: dns.RR_Header{
+			Name:   name,
+			Rrtype: dns.TypeSOA,
+			Class:  dns.ClassINET,
+			Ttl:    1800,
+		},
+		Ns:      h.Ns[0],
+		Mbox:    h.HostMasterMbox,
+		Serial:  1,
+		Refresh: 1800,
+		Retry:   1800,
+		Expire:  3600,
+		Minttl:  1800,
+	}
+	if !includeSig {
+		return
+	}
+	if sig := h.soaSig.Load(); sig != nil {
+		rrs = append(rrs, dns.Copy(sig))
+		rrs[1].Header().Name = name
+	}
+	return
+}
+
+func (h *SimpleHandler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
+	// queries only
+	if req.Opcode != dns.OpcodeQuery {
+		w.WriteMsg(new(dns.Msg).SetRcode(req, dns.RcodeNotImplemented))
+		return
+	}
+	q := &req.Question[0]
+	// prepare response, defer send
+	resp := new(dns.Msg).SetReply(req)
+	resp.Authoritative = true
+	defer func() {
+		w.WriteMsg(resp)
+	}()
+	// edns
+	err := CheckAndSetEdns(req, resp)
+	if err != nil {
+		// Rcode already set by CheckAndSetEdns
+		return
+	}
+	// class IN only
+	if q.Qclass != dns.ClassINET {
+		resp.Rcode = dns.RcodeNotImplemented
+		return
+	}
+	// allowed types only
+	switch q.Qtype {
+	case dns.TypeOPT, dns.TypeNXNAME:
+		resp.Rcode = dns.RcodeFormatError
+		return
+	case dns.TypeRRSIG, dns.TypeNSEC:
+		resp.Rcode = dns.RcodeRefused
+		return
+	case dns.TypeANY:
+		// meta type handled later
+	default:
+		// unhandled meta types
+		if q.Qtype&128 != 0 {
+			resp.Rcode = dns.RcodeNotImplemented
+			return
+		}
+	}
+	// defer compress, truncate, padding
+	defer func() {
+		ResizeForTransport(req, resp, GetProtocol(w))
+	}()
+	// defer dnssec proof
+	defer func() {
+		err := h.Prove(req, resp, 0, 0)
+		if err != nil {
+			log.Printf("[error] DnssecProvider.Prove: %v", err)
+			resp = new(dns.Msg).SetRcode(req, dns.RcodeServerFailure)
+		}
+	}()
+	// provide dnssec keys
+	if h.ProvideKeys(req, resp) {
+		return // no further answers
+	}
+	// defer adding SOA if no answers
+	defer func() {
+		if (resp.Rcode == dns.RcodeSuccess && len(resp.Answer) == 0) || resp.Rcode == dns.RcodeNameError {
+			opt := req.IsEdns0()
+			resp.Ns = append(resp.Ns, h.SOA(q, opt != nil && opt.Do())...)
+		}
+	}()
+	// defer adding default ANY response
+	defer func() {
+		if q.Qtype == dns.TypeANY && resp.Rcode == dns.RcodeSuccess && len(resp.Answer) == 0 {
+			resp.Answer = append(resp.Answer, &dns.HINFO{
+				Hdr: dns.RR_Header{
+					Name:   q.Name,
+					Rrtype: dns.TypeHINFO,
+					Class:  dns.ClassINET,
+					Ttl:    1800,
+				},
+				Cpu: "RFC8482",
+				Os:  "",
+			})
+		}
+	}()
+	// assume domain does not exist until validated below
+	resp.Rcode = dns.RcodeNameError
+	// apex records
+	if len(q.Name) == len(h.Zone) {
+		resp.Rcode = dns.RcodeSuccess
+		switch q.Qtype {
+		case dns.TypeSOA:
+			opt := req.IsEdns0()
+			resp.Answer = append(resp.Answer, h.SOA(q, opt != nil && opt.Do())...)
+		case dns.TypeNS:
+			for _, ns := range h.Ns {
+				resp.Answer = append(resp.Answer, &dns.NS{
+					Hdr: dns.RR_Header{
+						Name:   q.Name,
+						Rrtype: dns.TypeNS,
+						Class:  dns.ClassINET,
+						Ttl:    1800,
+					},
+					Ns: ns,
+				})
+			}
+		}
+	}
+	// static records
+	if h.StaticRecords != nil {
+		rrs, validName := h.StaticRecords.Get(q)
+		if len(rrs) > 0 {
+			resp.Answer = append(resp.Answer, rrs...)
+		}
+		if validName {
+			resp.Rcode = dns.RcodeSuccess
+		}
+	}
+	// generate records
+	if h.RecordGenerator != nil {
+		rrs, validName, err := h.GenerateRecords(q, h.Zone)
+		if err != nil {
+			log.Printf("[error] SimpleHandler.GenerateRecords (%v): %v", h.Zone, err)
+			resp = new(dns.Msg).SetRcode(req, dns.RcodeServerFailure)
+			return
+		}
+		if len(rrs) > 0 {
+			resp.Answer = append(resp.Answer, rrs...)
+		}
+		if validName {
+			resp.Rcode = dns.RcodeSuccess
+		}
+	}
+}

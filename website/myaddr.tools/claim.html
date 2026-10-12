@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<!-- Modified for https://github.com/efrgdgr0024345/dnscheck on 2026-10-12; original project by Brian Shea and contributors. See docs/UPSTREAM.md. -->
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>myaddr.tools - Claim your name</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link
+  rel="stylesheet"
+  href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
+  integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB"
+  crossorigin="anonymous">
+<meta name="turnstile-sitekey" content="">
+<meta name="referrer" content="no-referrer">
+<script>
+  const theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  document.documentElement.setAttribute('data-bs-theme', theme)
+  window.addEventListener('load', async () => {
+    const claimForm = document.getElementById('claim-form')
+    const nameInput = document.getElementById('name-input')
+    const submitButton = document.getElementById('submit-button')
+    const sitekey = document.querySelector('meta[name="turnstile-sitekey"]').content
+    if (!sitekey) {
+      submitButton.disabled = true
+      document.getElementById('captcha-notice').textContent = 'Claiming is not configured. The operator must set their own Turnstile site key and matching server secret.'
+      return
+    }
+    // Load the provider only after the visitor chooses to continue. Turnstile is
+    // still trusted script on this page; this does not claim to isolate it.
+    await new Promise(resolve => {
+      document.getElementById('captcha-consent').addEventListener('click', resolve, { once: true })
+    })
+    document.getElementById('captcha-consent').disabled = true
+    try {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
+        script.onload = resolve
+        script.onerror = reject
+        document.head.append(script)
+      })
+    } catch {
+      document.getElementById('captcha-notice').textContent = 'The CAPTCHA could not load. Reload to try again.'
+      return
+    }
+    submitButton.disabled = false
+    const turnstileWidgetId = turnstile.render('#turnstile-widget', {
+      sitekey,
+      action: 'claim',
+      size: 'flexible',
+    })
+    const handleError = e => {
+      console.error(e)
+      submitButton.remove()
+      const alertBody = document.getElementById('alert-body')
+      alertBody.classList.remove('d-none')
+      alertBody.firstElementChild.innerHTML = 'Hmmm... an error occurred. Reload to try again.'
+    }
+    const handleSuccess = async response => {
+      if (response.ok) {
+        try {
+          const data = await response.json()
+          document.getElementById('key-input').value = data.key
+          document.getElementById('claim-card').classList.add('d-none')
+          document.getElementById('success-card').classList.remove('d-none')
+        } catch (e) {
+          handleError(e)
+        }
+      } else if (response.status === 409) {
+        claimForm.classList.remove('was-validated')
+        nameInput.disabled = false
+        submitButton.disabled = false
+        submitButton.innerHTML = 'Claim'
+        document.getElementById('name-invalid-feedback').classList.add('d-none')
+        document.getElementById('name-taken-feedback').classList.remove('d-none')
+        nameInput.classList.add('is-invalid')
+        nameInput.addEventListener('input', () => {
+          nameInput.classList.remove('is-invalid')
+          document.getElementById('name-taken-feedback').classList.add('d-none')
+          document.getElementById('name-invalid-feedback').classList.remove('d-none')
+        }, { once: true })
+        turnstile.reset(turnstileWidgetId)
+      } else {
+        handleError('unhandled response status')
+      }
+    }
+    claimForm.addEventListener('submit', async e => {
+      e.preventDefault()
+      claimForm.classList.add('was-validated')
+      if (turnstile.isExpired(turnstileWidgetId)) {
+        turnstile.reset(turnstileWidgetId)
+      }
+      const turnstileToken = turnstile.getResponse(turnstileWidgetId)
+      if (claimForm.checkValidity() && turnstileToken) {
+        nameInput.disabled = true
+        submitButton.disabled = true
+        submitButton.innerHTML = '<span class="spinner-border spinner-border-sm"></span>'
+        fetch('/reg', {
+          method: 'POST',
+          credentials: 'omit',
+          cache: 'no-store',
+          referrerPolicy: 'no-referrer',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: nameInput.value,
+            challenge: turnstileToken
+          })
+        }).then(handleSuccess, handleError)
+      }
+    })
+    const showButton = document.getElementById('show-button')
+    showButton.addEventListener('click', () => {
+      const keyInput = document.getElementById('key-input')
+      if (keyInput.type === 'password') {
+        keyInput.type = 'text'
+        showButton.firstElementChild.innerHTML = 'Hide'
+      } else {
+        keyInput.type = 'password'
+        showButton.firstElementChild.innerHTML = 'Show'
+      }
+    })
+    const copyButton = document.getElementById('copy-button')
+    copyButton.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(document.getElementById('key-input').value)
+        copyButton.firstElementChild.innerHTML = 'Copied'
+        setTimeout(() => { copyButton.firstElementChild.innerHTML = 'Copy' }, 800)
+      } catch (e) {
+        console.error(e)
+      }
+    })
+    nameInput.focus()
+  })
+</script>
+<div class="d-flex flex-column" style="min-height: 85vh;">
+  <nav class="navbar bg-body-tertiary">
+    <div class="container">
+      <a class="navbar-brand" href="/">myaddr<span class="text-body-secondary">.tools</span></a>
+    </div>
+  </nav>
+  <div class="container d-flex align-items-center justify-content-center flex-grow-1 py-3">
+    <div class="card w-100" style="max-width: 40rem;" id="claim-card">
+      <div class="card-body">
+        <p class="h4 card-title">Claim your name!</p>
+        <p class="h5 card-subtitle text-body-secondary">Step 1 of 2</p>
+      </div>
+      <div class="d-none card-body" id="alert-body">
+        <div class="alert alert-danger card-text"></div>
+      </div>
+      <div class="card-body">
+        <form id="claim-form" autocomplete="off" novalidate>
+          <div class="mb-3">
+            <label for="name-input" class="form-label">Your domain name</label>
+            <div class="input-group has-validation">
+              <input type="text" class="form-control" id="name-input" required pattern="[a-zA-Z][a-zA-Z0-9\-]{4,38}[a-zA-Z0-9]">
+              <span class="input-group-text">.operator-configured-zone</span>
+              <div class="invalid-feedback">
+                <div id="name-invalid-feedback">
+                  Names must:
+                  <ul>
+                    <li>be 6 to 40 characters long</li>
+                    <li>start with a letter</li>
+                    <li>end with a letter or number</li>
+                    <li>consist of only letters, numbers, and hyphens</li>
+                  </ul>
+                </div>
+                <div class="d-none" id="name-taken-feedback">
+                  Sorry, this name is taken. Please choose another.
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="mb-3">
+            <div class="form-label">Human verification</div>
+            <p class="small" id="captcha-notice">Continuing loads Cloudflare Turnstile, which receives browser and network information. Its script runs on this page, including when your new secret key is displayed. Only continue if you trust this operator and provider.</p>
+            <button type="button" class="btn btn-outline-secondary mb-3" id="captcha-consent">Load CAPTCHA and continue</button>
+            <div id="turnstile-widget"></div>
+          </div>
+          <div>
+            <button class="btn btn-primary w-100" type="submit" id="submit-button" disabled>Claim</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <div class="d-none card w-100" style="max-width: 40rem;" id="success-card">
+      <div class="card-body">
+        <p class="h4 card-title text-success">You have it!</p>
+        <p class="h5 card-subtitle text-body-secondary">Step 2 of 2</p>
+      </div>
+      <div class="card-body">
+        <div class="alert alert-info card-text">
+          The secret key below allows anyone who has it to make updates to your domain. Keep it safe!
+        </div>
+      </div>
+      <div class="card-body">
+        <label for="key-input" class="form-label">Your secret key</label>
+        <div class="input-group">
+          <input type="password" class="form-control" id="key-input" readonly>
+          <button class="btn btn-outline-secondary" type="button" id="show-button">
+            <span style="display: block; width: 6ch;">Show</span>
+          </button>
+          <button class="btn btn-outline-secondary" type="button" id="copy-button">
+            <span style="display: block; width: 6ch;">Copy</span>
+          </button>
+        </div>
+        <div class="form-text">
+          Save your secret key now. Once you leave this page, it is not possible to recover.
+        </div>
+      </div>
+      <div class="card-body">
+        <p class="card-text lead">
+          It's time to make your first update!
+        </p>
+        <p class="card-text">
+          Your domain registration is pending until you make your first update, such as adding an IP address.
+          Your registration will expire if you do not make your first update within <strong>1 hour</strong>.
+        </p>
+        <p class="card-text">
+          IP address records must be updated at least once every <strong>90 days</strong> to remain active.
+          Your registration will expire if no updates are made for <strong>120 days</strong>.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer class="fork-credit" style="margin: 2rem 1rem 5rem; padding-top: 1rem; border-top: 1px solid currentColor; font-size: 0.9rem; line-height: 1.6; white-space: normal; opacity: 1;">
+  <strong>Modified community version.</strong> Based on <a href="https://github.com/brianshea2/addr.tools">addr.tools by Brian Shea and contributors</a>.
+  <a href="https://github.com/efrgdgr0024345/dnscheck">Source of this modified version</a> ·
+  <a href="https://github.com/efrgdgr0024345/dnscheck/blob/main/LICENSE">AGPL-3.0-or-later license</a> ·
+  <a href="https://github.com/efrgdgr0024345/dnscheck/blob/main/CREDITS.md">Credits</a> ·
+  <a href="https://github.com/efrgdgr0024345/dnscheck/blob/main/THIRD_PARTY_NOTICES.md">Third-party notices</a>.
+  Changes and deployment are not endorsed by the upstream authors. Provided without warranty; see the license.
+</footer>

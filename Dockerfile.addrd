@@ -1,0 +1,26 @@
+# Modified for dnscheck on 2026-10-12; original project by Brian Shea and contributors.
+# See COPYRIGHT, LICENSE, CREDITS.md and MODIFICATIONS.md.
+FROM golang:1.27.2@sha256:5bc7f572bbaa98885a3a1fd9c0aa76b59e3e14e8628bfc316bbfd0c701e4818c AS build
+WORKDIR /build
+COPY go.mod go.sum ./
+RUN go mod download && go mod verify
+COPY cmd ./cmd/
+COPY internal ./internal/
+ARG SOURCE_REVISION=development
+RUN CGO_ENABLED=0 go build -mod=readonly -trimpath -buildvcs=false \
+    -ldflags="-s -w -X main.revision=${SOURCE_REVISION}" -o /out/addrd ./cmd/addrd
+
+FROM scratch
+ARG SOURCE_REVISION=development
+LABEL org.opencontainers.image.source="https://github.com/efrgdgr0024345/dnscheck" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later" \
+      org.opencontainers.image.revision="${SOURCE_REVISION}" \
+      org.opencontainers.image.description="Modified addr.tools; original work by Brian Shea and contributors. See /usr/share/doc/dnscheck."
+COPY --from=build /out/addrd /usr/bin/addrd
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=build /usr/share/doc/ca-certificates/copyright /usr/share/doc/dnscheck/ca-certificates.COPYRIGHT
+COPY LICENSE COPYRIGHT CREDITS.md THIRD_PARTY_NOTICES.md MODIFICATIONS.md /usr/share/doc/dnscheck/
+USER 10001:10001
+WORKDIR /data
+EXPOSE 53/udp 53/tcp 853/udp 853/tcp
+ENTRYPOINT ["/usr/bin/addrd"]

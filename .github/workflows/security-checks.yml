@@ -1,0 +1,83 @@
+name: Security regression checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      DNSCHECK_TEST_VALKEY_ADDR: 127.0.0.1:16479
+      DNSCHECK_REQUIRE_UNIX_SOCKETS: "1"
+    services:
+      valkey:
+        image: valkey/valkey:9.0.0@sha256:00e026f877bbbed33d13241e5e701142e8842f94e1124ce1d5ddbbf6d0cee4fb
+        ports:
+          - 127.0.0.1:16479:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.19.0
+      - name: Verify dependency checksums
+        run: go mod verify
+      - name: Run race, browser and certificate-helper regressions
+        run: make test
+      - name: Build, vet and validate example configurations
+        run: |
+          make build vet check-config
+          ./bin/addrd -check-config -c configs/sample-addrd.json
+          ./bin/addrd -version
+      - name: Check reachable dependency vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+  proxy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the runner's supported Nginx and OpenSSL
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y nginx openssl
+      - name: Test the actual proxy template on isolated loopback ports
+        env:
+          DNSCHECK_NGINX: /usr/sbin/nginx
+        run: python3 -m unittest discover -s tests/nginx -p 'test_*.py' -v
+
+  container:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the pinned non-root image
+        env:
+          SOURCE_REVISION: ${{ github.sha }}
+        run: docker build --file Dockerfile.addrd --build-arg "SOURCE_REVISION=$SOURCE_REVISION" --tag dnscheck:test .
+      - name: Execute the built binary without network or privileges
+        run: docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges dnscheck:test -version

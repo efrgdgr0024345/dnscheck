@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<!-- Modified for https://github.com/efrgdgr0024345/dnscheck on 2026-10-12; original project by Brian Shea and contributors. See docs/UPSTREAM.md. -->
+<html lang="en">
+<meta charset="utf-8">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>myip.addr.tools</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="/man.css">
+
+
+<header><h1>MYIP.ADDR.TOOLS.</h1>              <div>Internet Protocol</div>         <div>MYIP.ADDR.TOOLS.</div></header>
+
+<p>Modified fork: configure your own service hostnames. The reserved example URLs below are not live services. No IP checks are made automatically on this help page.</p>
+<h2>NAME</h2>
+<p>
+  myip.addr.tools - get your public IP address
+
+<h2>SYNOPSIS</h2>
+<p>
+  <samp class="pre-line break">
+    <i>$</i> <kbd>curl https://myip.example.com</kbd>
+    <span id="myip">2001:db8::c0:ffee</span>
+  </samp>
+
+<p>
+  <samp class="pre-line break">
+    <i>$</i> <kbd>curl https://myipv4.example.com</kbd>
+    <span id="myipv4">192.0.2.1</span>
+  </samp>
+
+<p>
+  <samp class="pre-line break">
+    <i>$</i> <kbd>curl https://myipv6.example.com</kbd>
+    <span id="myipv6">2001:db8::c0:ffee</span>
+  </samp>
+
+<p>
+  <samp class="pre-line break">
+    <i>$</i> <kbd>curl https://myip.example.com/json</kbd>
+    <span id="json">{"ip":"2001:db8::c0:ffee"}</span>
+  </samp>
+
+<h2>DESCRIPTION</h2>
+<p>
+  Returns your public IP address. That's it.
+
+<h2>FORMATS</h2>
+<p>
+  By default, your IP is returned with a trailing newline character. Change this by specifying a format:
+
+<table>
+  <tr>
+    <td><a href="https://myip.addr.tools/plain">/plain</a>
+    <td>no trailing newline
+  <tr>
+    <td><a href="https://myip.addr.tools/json">/json</a>
+    <td>a JSON object
+  <tr>
+    <td><a href="https://myip.addr.tools/json?key=foo">/json?key=foo</a>
+    <td>a JSON object with custom key
+  <tr>
+    <td><a href="https://myip.addr.tools/pfsense">/pfsense</a>
+    <td>a pfSense IP Check Service
+</table>
+
+<h2>STUN</h2>
+<p>
+  The original service operates a public <a href="https://en.wikipedia.org/wiki/STUN">STUN</a> server on port 3478. A deployment of this fork must configure its own STUN service if that optional feature is required.
+
+<h2>UPSTREAM REFERENCE LINKS</h2>
+<p>
+  <a href="https://addr.tools">addr.tools</a>
+
+<footer class="fork-credit" style="margin: 2rem 1rem 5rem; padding-top: 1rem; border-top: 1px solid currentColor; font-size: 0.9rem; line-height: 1.6; white-space: normal; opacity: 1;">
+  <strong>Modified community version.</strong> Based on <a href="https://github.com/brianshea2/addr.tools">addr.tools by Brian Shea and contributors</a>.
+  <a href="https://github.com/efrgdgr0024345/dnscheck">Source of this modified version</a> ·
+  <a href="https://github.com/efrgdgr0024345/dnscheck/blob/main/LICENSE">AGPL-3.0-or-later license</a> ·
+  <a href="https://github.com/efrgdgr0024345/dnscheck/blob/main/CREDITS.md">Credits</a> ·
+  <a href="https://github.com/efrgdgr0024345/dnscheck/blob/main/THIRD_PARTY_NOTICES.md">Third-party notices</a>.
+  Changes and deployment are not endorsed by the upstream authors. Provided without warranty; see the license.
+</footer>

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<!-- Modified for https://github.com/efrgdgr0024345/dnscheck on 2026-10-12; original project by Brian Shea and contributors. See docs/UPSTREAM.md. -->
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Dynamic DNS — modified community version</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="/man.css">
+<header><h1>Dynamic DNS</h1><div>DNS records for your own domains</div></header>
+<p class="fork-deployment-note">This documentation describes the modified fork. Reserved <code>example.com</code> and <code>*.example</code> names below are placeholders; configure your own service domains. The original public addr.tools services are operated independently.</p>
+<h2>HOW IT WORKS</h2>
+<p>A generated secret controls the DNS name formed from its SHA-224 hash. Point a CNAME from your own subdomain at that generated name. Keep the secret private: anyone with it can change or remove the addresses.</p>
+<h2>CREATE A SECRET</h2>
+<p>Use 32 cryptographically random bytes encoded as unpadded base64url (43 characters). The API requires this exact token format and rejects query-string credentials. Generate the token cryptographically: a format check cannot prove randomness. These commands create private files without printing the secret:</p>
+<p><samp class="pre-line break">umask 077
+openssl rand -base64 32 | tr &#x27;+/&#x27; &#x27;-_&#x27; | tr -d &#x27;=\n&#x27; &gt; secret.token
+{ printf &#x27;Authorization: Bearer &#x27;; cat secret.token; printf &#x27;\n&#x27;; } &gt; auth.header
+sha224=$(openssl dgst -sha224 -r secret.token | cut -d &#x27; &#x27; -f 1)</samp></p>
+<p>Keep <code>secret.token</code> and <code>auth.header</code> outside a web root and restrict access to the updater account. A public hash lets anyone test password guesses offline, which is why randomness matters. Changing the secret changes the DNS name and requires updating your delegation.</p>
+<h2>UPDATE API</h2>
+<p>Send <code>POST</code> or <code>PUT</code> with <code>Authorization: Bearer SECRET</code> and an <code>ip</code> body field. Bodies may be URL-encoded forms or JSON. Credentials in URLs are rejected. Successful updates return HTTP 200 and <code>OK</code>.</p>
+<p><samp class="pre-line break">curl --fail-with-body --header @auth.header --data-urlencode &quot;ip=192.0.2.1&quot; https://dyn.example.com/</samp></p>
+<p>Use <code>ip=self</code> for the request source IP. An operator can configure IPv4-only and IPv6-only hostnames. Each address family must be refreshed at least once every 90 days.</p>
+<p>A <code>GET</code> with the bearer header and no mutation fields returns the derived domain without changing state. A <code>DELETE</code> with the bearer header removes both address families and returns HTTP 204. GET requests containing mutation fields are rejected.</p>
+<h2>DELEGATION EXAMPLE</h2>
+<p><samp class="pre-line break">printf &quot;%s.dyn.example.com\n&quot; &quot;$sha224&quot;</samp></p>
+<p>Use the printed name as the CNAME target of <code>home.example.com</code>. Refresh its address using an updater capable of HTTPS POST and bearer headers:</p>
+<p><samp class="pre-line break">curl --fail-with-body --header @auth.header --data-urlencode &quot;ip=self&quot; https://ipv4.dyn.example.com/</samp></p>
+<p>Legacy clients that support only a credential-bearing GET URL are incompatible with this hardened API. Use a compatible updater or a fixed local helper; do not re-enable URL credentials to fit a client.</p>
+<h2>DATA HANDLING</h2>
+<p>Published IP records are public DNS data. The service and reverse proxy process update source addresses and may log requests. Operators must publish their actual logging and retention policy. Never include the bearer credential in logs or a support report.</p>
+
+
+<footer class="fork-credit" style="margin: 2rem 1rem 5rem; padding-top: 1rem; border-top: 1px solid currentColor; font-size: 0.9rem; line-height: 1.6; white-space: normal; opacity: 1;">
+  <strong>Modified community version.</strong> Based on <a href="https://github.com/brianshea2/addr.tools">addr.tools by Brian Shea and contributors</a>.
+  <a href="https://github.com/efrgdgr0024345/dnscheck">Source of this modified version</a> ·
+  <a href="https://github.com/efrgdgr0024345/dnscheck/blob/main/LICENSE">AGPL-3.0-or-later license</a> ·
+  <a href="https://github.com/efrgdgr0024345/dnscheck/blob/main/CREDITS.md">Credits</a> ·
+  <a href="https://github.com/efrgdgr0024345/dnscheck/blob/main/THIRD_PARTY_NOTICES.md">Third-party notices</a>.
+  Changes and deployment are not endorsed by the upstream authors. Provided without warranty; see the license.
+</footer>
